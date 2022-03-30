@@ -1,15 +1,15 @@
 package com.permission.core.aspect
 
-import android.app.Activity
-import android.content.Intent
 import android.util.Log
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
-import androidx.lifecycle.lifecycleScope
 import com.permission.core.annotation.PermissionRequest
 import com.permission.core.annotation.PermissionRequestFailed
 import com.permission.core.util.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.Around
 import org.aspectj.lang.annotation.Aspect
@@ -42,47 +42,47 @@ class PermissionAspect {
         requestPermissions(joinPoint, permissionRequest)
     }
 
+    /**
+     * Desc: 申请权限
+     * <p>
+     * Author: linjiaqiang
+     * Date: 2022/3/30
+     */
     private fun requestPermissions(joinPoint: ProceedingJoinPoint, permissionRequest: PermissionRequest) {
         GlobalScope.launch(Dispatchers.Main.immediate) {
-            var fragment = generateFragmentFromContext(joinPoint.`this`)
-            var activity: Activity? = null
-            // 如果上下文无法添加Fragment，则启动一个透明Activity，并添加Fragment
-            if (fragment == null) {
-                val intent = Intent(application, PermissionRequestActivity::class.java)
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                application.startActivity(intent)
-                activity = awaitActivityCreate(application, PermissionRequestActivity::class.java)
-                fragment = PermissionRequestFragment.generate(activity)
+            // 优先获取当前activity
+            var activity = findActivityFromContext(joinPoint.`this`)
+            // 如果获取不到当前activity，则启动一个透明Activity
+            if (activity == null) {
+                // 启动activity，onCreate之后返回activity实例
+                activity = awaitStartActivityAndCreate(application, PermissionRequestActivity::class.java)
             }
-            fragment.lifecycleScope.launchWhenResumed {
-                // 使用fragment发起权限请求
-                fragment.requestPermission(permissionRequest.permissions as Array<String>, permissionRequest.requestCode, object : IPermission {
-                    override fun onPermissionGranted() {
-                        try {
-                            joinPoint.proceed()
-                        } catch (throwable: Throwable) {
-                            Log.d(TAG, throwable.localizedMessage.orEmpty())
-                        } finally {
-                            activity?.finish()
-                        }
-                    }
-
-                    override fun onPermissionDenied(permissionDetail: PermissionDetail) {
-                        try {
-                            onDenied(joinPoint.`this`, permissionDetail)
-                        } catch (throwable: Throwable) {
-                            Log.d(TAG, throwable.localizedMessage.orEmpty())
-                        } finally {
-                            activity?.finish()
-                        }
-                    }
-                })
+            try {
+                // 申请权限，返回申请结果
+                val result = activity.requestPermissionsForResult(permissionRequest.permissions as Array<String>, permissionRequest.requestCode)
+                if (activity is PermissionRequestActivity) {
+                    activity.finish()
+                }
+                // 如果没有权限被拒绝，则权限申请通过
+                if (result.deniedPermissions.isEmpty()) {
+                    joinPoint.proceed()
+                } else {
+                    onDenied(joinPoint, result)
+                }
+            } catch (throwable: Throwable) {
+                Log.e(TAG, throwable.localizedMessage.orEmpty())
             }
         }
     }
 
-    private fun onDenied(any: Any, permissionDetail: PermissionDetail) {
-        val cls: Class<*> = any.javaClass
+    /**
+     * Desc: 权限被拒绝，反射调用[PermissionRequestFailed]注解的方法，支持无参或只有一个[PermissionDetail]参数
+     * <p>
+     * Author: linjiaqiang
+     * Date: 2022/3/30
+     */
+    private fun onDenied(joinPoint: ProceedingJoinPoint, permissionDetail: PermissionDetail) {
+        val cls: Class<*> = joinPoint.`this`.javaClass
         val methods = cls.declaredMethods
         if (methods.isEmpty()) return
         methods.firstOrNull {
@@ -91,32 +91,32 @@ class PermissionAspect {
             isAccessible = true
             val types = parameterTypes
             if (types.isEmpty()) {
-                invoke(any)
+                invoke(joinPoint.`this`)
             } else if (types.size == 1) {
-                invoke(any, permissionDetail)
+                invoke(joinPoint.`this`, permissionDetail)
             }
         }
     }
 
     /**
-     * Desc: 从上下文中生成Fragment
+     * Desc: 从切面上下文中获取当前Activity
      * <p>
      * Author: linjiaqiang
      * Date: 2022/3/25
      */
-    private fun generateFragmentFromContext(any: Any): PermissionRequestFragment? {
+    private fun findActivityFromContext(any: Any): FragmentActivity? {
         if (any is Fragment) {
             val activity = any.activity
             if (activity != null && !activity.isDestroyed) {
-                return PermissionRequestFragment.generate(activity)
+                return activity
             }
         }
         if (any is FragmentActivity) {
-            return PermissionRequestFragment.generate(any)
+            return any
         }
-        val curActivity = getCurrentActivity()
+        val curActivity = getTopActivity()
         if (curActivity is FragmentActivity) {
-            return PermissionRequestFragment.generate(curActivity)
+            return curActivity
         }
         return null
     }

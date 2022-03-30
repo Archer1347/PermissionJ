@@ -52,8 +52,8 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(
             this, "申请权限失败\n" +
                     "请求码:${permissionDetail.requestCode}\n" +
-                    "成功:${permissionDetail.grantedPermissions?.joinToString()}\n" +
-                    "失败:${permissionDetail.deniedPermissions?.joinToString()}\n" +
+                    "成功:${permissionDetail.grantedPermissions.joinToString()}\n" +
+                    "失败:${permissionDetail.deniedPermissions.joinToString()}\n" +
                     "是否勾选了不再提示:${permissionDetail.rejectRemind}", Toast.LENGTH_LONG
         ).show()
     }

@@ -13,7 +13,7 @@ package com.permission.core.aspect
  */
 data class PermissionDetail(
     val requestCode: Int,
-    val grantedPermissions: List<String>?,
-    val deniedPermissions: List<String>?,
+    val grantedPermissions: List<String>,
+    val deniedPermissions: List<String>,
     val rejectRemind: Boolean,
 )
