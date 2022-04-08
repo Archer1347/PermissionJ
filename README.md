@@ -63,3 +63,14 @@ fun failed(permissionDetail: PermissionDetail) {
 }
 ```
 
+5. 混淆配置
+```
+ -keepclasseswithmembers class * {
+     @com.permission.core.annotation.PermissionRequest <methods>;
+ }
+
+ -keepclasseswithmembers class * {
+     @com.permission.core.annotation.PermissionRequestFailed <methods>;
+ }
+ 
+```
